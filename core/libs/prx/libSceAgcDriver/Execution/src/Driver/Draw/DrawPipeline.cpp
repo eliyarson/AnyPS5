@@ -142,6 +142,9 @@ void DrawPipeline::report(std::chrono::steady_clock::time_point now) {
 }
 
 void DrawPipeline::run() {
+    static const bool destroyUnlocked = [] {
+        return std::getenv("APS5_NO_COMMIT_DESTROY_UNLOCKED") == nullptr;
+    }();
     PerformanceTrace::BindThread("draw committer");
     StartCommitterSampler();
     for (;;) {
@@ -175,12 +178,23 @@ void DrawPipeline::run() {
             stopped = true;
             if (!shutdown) Driver::Get().ReportFailure(fatal);
         }
-        std::lock_guard lock(mutex);
+        std::unique_lock lock(mutex);
+        std::optional<Item> retired;
+        if (destroyUnlocked) {
+            retired = std::move(items.front());
+            ++retiring;
+        }
         items.pop_front();
         ++commits;
         commitNs += spent;
         if (failed) ++commitErrors;
         if (fatal != nullptr && failure == nullptr) failure = fatal;
+        if (retired.has_value()) {
+            lock.unlock();
+            retired.reset();
+            lock.lock();
+            --retiring;
+        }
         outstanding.fetch_sub(1, std::memory_order_release);
         if (idleWaiters != 0) idle.notify_all();
     }
@@ -208,7 +222,7 @@ void DrawPipeline::Drain(DrainReason reason, std::uint32_t opcode) {
     SpinUntil(HandoffSpinWindow() * 2, [&] { return !Busy(); });
     std::unique_lock lock(mutex);
     ++idleWaiters;
-    idle.wait(lock, [&] { return items.empty(); });
+    idle.wait(lock, [&] { return items.empty() && retiring == 0; });
     --idleWaiters;
     const auto index = static_cast<std::size_t>(reason);
     ++drains[index];

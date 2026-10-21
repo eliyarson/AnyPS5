@@ -639,6 +639,23 @@ if(BUILD_TESTING)
     endif()
 endif()
 
+add_test_executable(agc_driver_draw_pipeline_retire_tests EXCLUDE_FROM_ALL tests/DrawPipelineRetire.cpp)
+target_include_directories(agc_driver_draw_pipeline_retire_tests PRIVATE ${LIBS_INCLUDE_DIR})
+target_link_libraries(agc_driver_draw_pipeline_retire_tests PRIVATE libSceAgcDriver libkernel libc)
+set_target_properties(agc_driver_draw_pipeline_retire_tests PROPERTIES CXX_EXTENSIONS OFF)
+configure_windows_unwind(agc_driver_draw_pipeline_retire_tests)
+if(BUILD_TESTING)
+    set_target_properties(agc_driver_draw_pipeline_retire_tests PROPERTIES EXCLUDE_FROM_ALL OFF)
+    add_test(NAME agc_driver_draw_pipeline_retire COMMAND agc_driver_draw_pipeline_retire_tests)
+    add_test(NAME agc_driver_draw_pipeline_retire_in_lock COMMAND agc_driver_draw_pipeline_retire_tests)
+    set_tests_properties(agc_driver_draw_pipeline_retire_in_lock PROPERTIES ENVIRONMENT "APS5_NO_COMMIT_DESTROY_UNLOCKED=1")
+    set_tests_properties(agc_driver_draw_pipeline_retire agc_driver_draw_pipeline_retire_in_lock PROPERTIES TIMEOUT 30)
+    if(WIN32)
+        set_tests_properties(agc_driver_draw_pipeline_retire agc_driver_draw_pipeline_retire_in_lock PROPERTIES ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:libc>")
+    endif()
+endif()
+
 add_test_executable(agc_shader_memory_tests EXCLUDE_FROM_ALL
         tests/ShaderMemory.cpp
         Execution/src/ShaderMemory.cpp
